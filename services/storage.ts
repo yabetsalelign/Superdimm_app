@@ -1,81 +1,141 @@
-// SuperDimm Mobile — Secure Storage Service (Phase 1 Stub)
-//
-// Wraps expo-secure-store for encrypted key/value storage on device.
-// This is the designated place for auth tokens in Phase 2.
-//
-// In Phase 1: the module is structured and typed but no real tokens are stored.
+// SuperDimm Mobile — Secure Storage Service
+// Handles encrypted storage for auth tokens and customer session data.
+// Uses expo-secure-store on iOS/Android and localStorage in web browser environments.
 
 import * as SecureStore from 'expo-secure-store';
-import type { AuthTokens } from '@/types';
-
-// ─────────────────────────────────────────────
-// Storage Keys
-// ─────────────────────────────────────────────
+import { Platform } from 'react-native';
+import type { AuthTokens, AuthSessionData, CustomerSummary, UserSummary } from '@/types';
 
 const KEYS = {
   ACCESS_TOKEN: 'superdimm.auth.access_token',
-  REFRESH_TOKEN: 'superdimm.auth.refresh_token',
+  TOKEN_TYPE: 'superdimm.auth.token_type',
   TOKEN_EXPIRY: 'superdimm.auth.token_expiry',
+  USER_DATA: 'superdimm.auth.user_data',
+  CUSTOMER_DATA: 'superdimm.auth.customer_data',
 } as const;
 
-// ─────────────────────────────────────────────
-// Token Storage
-// ─────────────────────────────────────────────
+async function setItem(key: string, value: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // storage unavailable
+    }
+  } else {
+    await SecureStore.setItemAsync(key, value);
+  }
+}
+
+async function getItem(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  } else {
+    return await SecureStore.getItemAsync(key);
+  }
+}
+
+async function deleteItem(key: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // storage unavailable
+    }
+  } else {
+    await SecureStore.deleteItemAsync(key);
+  }
+}
 
 export const storage = {
   /**
-   * Persist auth tokens to secure device storage.
-   * TODO (Phase 2): Call this after successful login.
+   * Persist full authentication session to secure storage.
    */
-  saveTokens: async (tokens: AuthTokens): Promise<void> => {
+  saveSession: async (session: AuthSessionData): Promise<void> => {
     await Promise.all([
-      SecureStore.setItemAsync(KEYS.ACCESS_TOKEN, tokens.accessToken),
-      SecureStore.setItemAsync(KEYS.REFRESH_TOKEN, tokens.refreshToken),
-      SecureStore.setItemAsync(KEYS.TOKEN_EXPIRY, String(tokens.expiresAt)),
+      setItem(KEYS.ACCESS_TOKEN, session.accessToken),
+      setItem(KEYS.TOKEN_TYPE, session.tokenType || 'Bearer'),
+      setItem(KEYS.TOKEN_EXPIRY, String(session.expiresAt)),
+      setItem(KEYS.USER_DATA, JSON.stringify(session.user)),
+      session.customer ? setItem(KEYS.CUSTOMER_DATA, JSON.stringify(session.customer)) : Promise.resolve(),
     ]);
   },
 
   /**
-   * Read stored auth tokens. Returns null if not present.
-   * TODO (Phase 2): Call on app launch to restore session.
+   * Read stored auth tokens. Returns null if missing or expired.
    */
   getTokens: async (): Promise<AuthTokens | null> => {
-    const [accessToken, refreshToken, expiresAtStr] = await Promise.all([
-      SecureStore.getItemAsync(KEYS.ACCESS_TOKEN),
-      SecureStore.getItemAsync(KEYS.REFRESH_TOKEN),
-      SecureStore.getItemAsync(KEYS.TOKEN_EXPIRY),
+    const [accessToken, tokenType, expiresAtStr] = await Promise.all([
+      getItem(KEYS.ACCESS_TOKEN),
+      getItem(KEYS.TOKEN_TYPE),
+      getItem(KEYS.TOKEN_EXPIRY),
     ]);
 
-    if (!accessToken || !refreshToken || !expiresAtStr) {
+    if (!accessToken || !expiresAtStr) {
+      return null;
+    }
+
+    const expiresAt = parseInt(expiresAtStr, 10);
+    if (isNaN(expiresAt) || expiresAt <= Date.now()) {
+      // Token is expired
+      await storage.clearSession();
       return null;
     }
 
     return {
       accessToken,
-      refreshToken,
-      expiresAt: parseInt(expiresAtStr, 10),
+      tokenType: tokenType || 'Bearer',
+      expiresAt,
     };
   },
 
   /**
-   * Check if stored tokens exist and have not expired.
-   * TODO (Phase 2): Use this to gate authenticated navigation.
+   * Retrieve cached user details.
    */
-  hasValidSession: async (): Promise<boolean> => {
-    const tokens = await storage.getTokens();
-    if (!tokens) return false;
-    return tokens.expiresAt > Date.now();
+  getUser: async (): Promise<UserSummary | null> => {
+    const raw = await getItem(KEYS.USER_DATA);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   },
 
   /**
-   * Remove all stored tokens (logout / session clear).
-   * TODO (Phase 2): Call on logout or 401 response.
+   * Retrieve cached customer details.
    */
-  clearTokens: async (): Promise<void> => {
+  getCustomer: async (): Promise<CustomerSummary | null> => {
+    const raw = await getItem(KEYS.CUSTOMER_DATA);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Check if a valid unexpired session exists.
+   */
+  hasValidSession: async (): Promise<boolean> => {
+    const tokens = await storage.getTokens();
+    return tokens !== null;
+  },
+
+  /**
+   * Clear all persisted session data upon logout.
+   */
+  clearSession: async (): Promise<void> => {
     await Promise.all([
-      SecureStore.deleteItemAsync(KEYS.ACCESS_TOKEN),
-      SecureStore.deleteItemAsync(KEYS.REFRESH_TOKEN),
-      SecureStore.deleteItemAsync(KEYS.TOKEN_EXPIRY),
+      deleteItem(KEYS.ACCESS_TOKEN),
+      deleteItem(KEYS.TOKEN_TYPE),
+      deleteItem(KEYS.TOKEN_EXPIRY),
+      deleteItem(KEYS.USER_DATA),
+      deleteItem(KEYS.CUSTOMER_DATA),
     ]);
   },
 };

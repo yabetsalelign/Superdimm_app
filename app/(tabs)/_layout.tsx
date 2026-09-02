@@ -1,8 +1,10 @@
 // SuperDimm Mobile — Tab Navigation Layout
 // Five-tab bottom navigation: Home, Services, Requests, Alerts, Profile.
+// Ensures safe-area handling on iOS home indicator & Android gesture bar.
 
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
@@ -53,6 +55,10 @@ const TABS: TabConfig[] = [
 export default function TabLayout() {
   const scheme = useColorScheme();
   const theme = Colors[scheme];
+  const insets = useSafeAreaInsets();
+
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 8);
+  const tabHeight = (Platform.OS === 'ios' ? 56 : 60) + bottomPadding;
 
   return (
     <Tabs
@@ -64,16 +70,19 @@ export default function TabLayout() {
           backgroundColor: theme.tabBarBackground,
           borderTopColor: theme.tabBarBorder,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 : 64,
-          paddingBottom: Platform.OS === 'ios' ? Spacing[5] : Spacing[2],
-          paddingTop: Spacing[2],
+          height: tabHeight,
+          paddingBottom: bottomPadding,
+          paddingTop: 6,
           ...Shadow.tabBar,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
-          letterSpacing: 0.3,
+          letterSpacing: 0.2,
           marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
       }}
     >
@@ -86,7 +95,7 @@ export default function TabLayout() {
             tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? tab.iconFocused : tab.icon}
-                size={24}
+                size={23}
                 color={color}
               />
             ),

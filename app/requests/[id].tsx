@@ -1,7 +1,7 @@
 // SuperDimm — Request Details Screen
-// Displays detailed troubleshooting timeline, status, and responses for a ticket.
+// Live ticket information and status timeline fetched from the backend.
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,15 +9,55 @@ import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/ui/ThemedView';
 import { ThemedText } from '@/components/ui/ThemedText';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useTheme } from '@/hooks/useThemeColor';
 import { Spacing, Radius } from '@/constants';
+import { api } from '@/services/api';
+import type { ServiceRequest } from '@/types';
+
+function getStatusBadge(status?: string): { label: string; variant: BadgeVariant } {
+  const norm = status?.toLowerCase() || 'open';
+  switch (norm) {
+    case 'open':
+      return { label: 'Open', variant: 'info' };
+    case 'assigned':
+      return { label: 'Assigned', variant: 'info' };
+    case 'in_progress':
+      return { label: 'In Progress', variant: 'warning' };
+    case 'pending_customer':
+      return { label: 'Action Required', variant: 'warning' };
+    case 'resolved':
+      return { label: 'Resolved', variant: 'success' };
+    case 'closed':
+      return { label: 'Closed', variant: 'default' };
+    default:
+      return { label: status || 'Unknown', variant: 'default' };
+  }
+}
 
 export default function RequestDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+
+  const [ticket, setTicket] = useState<ServiceRequest | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadTicket() {
+      if (!id) return;
+      const res = await api.requests.getById(id);
+      if (res.success && res.data) {
+        setTicket(res.data);
+      }
+      setIsLoading(false);
+    }
+    loadTicket();
+  }, [id]);
+
+  const badge = getStatusBadge(ticket?.status);
+  const caseRef = ticket ? `SR-${ticket.id.slice(-5).toUpperCase()}` : 'SR-.....';
 
   return (
     <ThemedView style={styles.screen}>
@@ -37,74 +77,78 @@ export default function RequestDetailsScreen() {
           <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {/* Main Case Info */}
-          <Card style={styles.caseCard}>
-            <View style={styles.caseTop}>
-              <ThemedText variant="mono" primary style={styles.caseRef}>
-                SD-2026-0819 (#{id ?? '1'})
-              </ThemedText>
-              <Badge label="In Progress" variant="warning" />
-            </View>
-
-            <ThemedText variant="h2" style={styles.caseTitle}>
-              Intermittent optical loss on ONT port
+        {isLoading ? (
+          <LoadingState message="Loading ticket details..." />
+        ) : !ticket ? (
+          <View style={styles.notFound}>
+            <Ionicons name="alert-circle-outline" size={48} color={theme.error} />
+            <ThemedText variant="h3">Ticket Not Found</ThemedText>
+            <ThemedText variant="bodySmall" muted>
+              This service request could not be located or you may not have permission to view it.
             </ThemedText>
-
-            <ThemedText variant="caption" muted>
-              Reported on Sep 01, 2026 • Category: Network Outage
-            </ThemedText>
-
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-            <ThemedText variant="bodySmall">
-              Customer reported sudden red LOS indicator on fiber ONT unit starting around 14:30 local time. Router logs show periodic packet drops.
-            </ThemedText>
-          </Card>
-
-          {/* Timeline / Activity Section */}
-          <View style={styles.section}>
-            <ThemedText variant="h3" style={styles.sectionTitle}>
-              Engineering Log
-            </ThemedText>
-
-            <Card style={styles.logCard}>
-              <View style={styles.timelineItem}>
-                <View style={[styles.dot, { backgroundColor: theme.primary }]} />
-                <View style={styles.timelineContent}>
-                  <ThemedText variant="label">Technician Dispatched</ThemedText>
-                  <ThemedText variant="caption" muted>
-                    Line diagnostics completed. Field engineer scheduled for inspection.
-                  </ThemedText>
-                  <ThemedText variant="caption" muted style={{ fontSize: 10 }}>
-                    Sep 02, 2026 at 09:15 AM
-                  </ThemedText>
-                </View>
-              </View>
-
-              <View style={[styles.timelineDivider, { backgroundColor: theme.border }]} />
-
-              <View style={styles.timelineItem}>
-                <View style={[styles.dot, { backgroundColor: theme.mutedForeground }]} />
-                <View style={styles.timelineContent}>
-                  <ThemedText variant="label">Ticket Acknowledged</ThemedText>
-                  <ThemedText variant="caption" muted>
-                    Automated triage assigned ticket to Level 2 Network Operations.
-                  </ThemedText>
-                  <ThemedText variant="caption" muted style={{ fontSize: 10 }}>
-                    Sep 01, 2026 at 02:35 PM
-                  </ThemedText>
-                </View>
-              </View>
-            </Card>
           </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            {/* Main Case Info */}
+            <Card style={styles.caseCard}>
+              <View style={styles.caseTop}>
+                <ThemedText variant="mono" primary style={styles.caseRef}>
+                  {caseRef}
+                </ThemedText>
+                <Badge label={badge.label} variant={badge.variant} />
+              </View>
 
-          <Button
-            label="Add Comment (Simulated)"
-            variant="secondary"
-            style={{ marginTop: Spacing[2] }}
-          />
-        </ScrollView>
+              <ThemedText variant="h2" style={styles.caseTitle}>
+                {ticket.title}
+              </ThemedText>
+
+              <ThemedText variant="caption" muted>
+                Reported on {new Date(ticket.createdAt).toLocaleDateString()} • Category:{' '}
+                {ticket.category ? ticket.category.toUpperCase() : 'GENERAL'}
+              </ThemedText>
+
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+              <ThemedText variant="bodySmall">
+                {ticket.description || 'No additional description provided.'}
+              </ThemedText>
+            </Card>
+
+            {/* Ticket Metadata / Assignment */}
+            <View style={styles.section}>
+              <ThemedText variant="h3" style={styles.sectionTitle}>
+                Assignment & SLA
+              </ThemedText>
+
+              <Card style={styles.metaCard}>
+                <View style={styles.metaRow}>
+                  <ThemedText variant="caption" muted>Priority Tier</ThemedText>
+                  <ThemedText variant="label" style={{ textTransform: 'capitalize' }}>
+                    {ticket.priority || 'Normal'}
+                  </ThemedText>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+                <View style={styles.metaRow}>
+                  <ThemedText variant="caption" muted>Engineering Lead</ThemedText>
+                  <ThemedText variant="label">
+                    {ticket.assignedUser?.name || 'Automated Queue (Unassigned)'}
+                  </ThemedText>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+                <View style={styles.metaRow}>
+                  <ThemedText variant="caption" muted>Last Updated</ThemedText>
+                  <ThemedText variant="label">
+                    {new Date(ticket.updatedAt).toLocaleString()}
+                  </ThemedText>
+                </View>
+              </Card>
+            </View>
+          </ScrollView>
+        )}
       </SafeAreaView>
     </ThemedView>
   );
@@ -132,6 +176,13 @@ const styles = StyleSheet.create({
     gap: Spacing[4],
     paddingBottom: Spacing[8],
   },
+  notFound: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing[6],
+    gap: Spacing[2],
+  },
   caseCard: {
     padding: Spacing[4],
     gap: Spacing[2],
@@ -158,27 +209,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 17,
   },
-  logCard: {
+  metaCard: {
     padding: Spacing[4],
     gap: Spacing[3],
   },
-  timelineItem: {
+  metaRow: {
     flexDirection: 'row',
-    gap: Spacing[3],
-    alignItems: 'flex-start',
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 4,
-  },
-  timelineContent: {
-    flex: 1,
-    gap: 2,
-  },
-  timelineDivider: {
-    height: 1,
-    marginLeft: 18,
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });

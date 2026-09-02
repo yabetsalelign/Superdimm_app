@@ -1,6 +1,5 @@
 // SuperDimm Mobile — Core TypeScript Types
-// These interfaces describe the customer-facing data model.
-// They will be populated by the API layer in Phase 2.
+// Aligned with the SuperDimm backend Prisma models and API endpoints.
 
 // ─────────────────────────────────────────────
 // Auth & Session
@@ -8,87 +7,116 @@
 
 export interface AuthTokens {
   accessToken: string;
-  refreshToken: string;
-  expiresAt: number; // Unix timestamp
+  tokenType: string; // 'Bearer'
+  expiresAt: number; // Unix timestamp in milliseconds
 }
 
-export interface AuthSession {
-  tokens: AuthTokens;
-  customer: CustomerSummary;
+export interface UserSummary {
+  id: string;
+  email: string;
+  name?: string | null;
+  role: string;
 }
-
-// ─────────────────────────────────────────────
-// Customer
-// ─────────────────────────────────────────────
-
-export type AccountStatus = 'active' | 'suspended' | 'pending' | 'closed';
 
 export interface CustomerSummary {
   id: string;
   name: string;
-  email: string;
-  status: AccountStatus;
+  email?: string | null;
+  phone?: string | null;
+  plan?: string | null;
+  status: string;
 }
 
-export interface Customer extends CustomerSummary {
-  phone?: string;
-  plan?: ServicePlan;
-  address?: string;
-  createdAt: string; // ISO 8601
+export interface AuthSessionData {
+  accessToken: string;
+  tokenType: string;
+  expiresAt: number;
+  user: UserSummary;
+  customer: CustomerSummary | null;
 }
 
 // ─────────────────────────────────────────────
-// Service Plans
+// Customer Profile & Details
 // ─────────────────────────────────────────────
 
-export type ServiceCategory = 'internet' | 'voice' | 'tv' | 'bundle' | 'business';
+export interface CustomerProfileDetail extends CustomerSummary {
+  createdAt: string;
+  updatedAt: string;
+  activeRequestsCount: number;
+  totalRequestsCount: number;
+  recentRequests: Array<{
+    id: string;
+    title: string;
+    category: string;
+    status: string;
+    priority: string;
+    createdAt: string;
+  }>;
+  recentTransactions: Array<{
+    id: string;
+    amount: number;
+    description: string;
+    type: string;
+    createdAt: string;
+  }>;
+}
 
-export interface ServicePlan {
-  id: string;
-  name: string;
-  category: ServiceCategory;
-  description?: string;
-  monthlyRate?: number;
-  currency?: string;
-  isActive: boolean;
+// ─────────────────────────────────────────────
+// Services / Plans (Authoritative Database Schema)
+// ─────────────────────────────────────────────
+
+export interface CustomerServicesData {
+  planName: string;
+  status: string;
+  memberSince: string;
 }
 
 // ─────────────────────────────────────────────
 // Service Requests
 // ─────────────────────────────────────────────
 
+export type RequestCategory =
+  | 'network'
+  | 'sim'
+  | 'billing'
+  | 'plan'
+  | 'provisioning'
+  | 'account'
+  | 'other';
+
 export type RequestStatus =
-  | 'submitted'
+  | 'open'
+  | 'assigned'
   | 'in_progress'
   | 'pending_customer'
+  | 'escalated'
   | 'resolved'
   | 'closed';
 
-export type RequestPriority = 'low' | 'normal' | 'high' | 'urgent';
-
-export type RequestCategory =
-  | 'network_outage'
-  | 'billing_discrepancy'
-  | 'technical_support'
-  | 'service_change'
-  | 'complaint'
-  | 'other';
+export type RequestPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export interface ServiceRequest {
   id: string;
+  customerId: string;
   title: string;
-  description: string;
-  category: RequestCategory;
-  status: RequestStatus;
-  priority: RequestPriority;
-  createdAt: string; // ISO 8601
-  updatedAt: string; // ISO 8601
-  resolvedAt?: string;
-  caseReference: string; // e.g. "SD-2024-00142"
+  description?: string | null;
+  category: RequestCategory | string;
+  status: RequestStatus | string;
+  priority: RequestPriority | string;
+  assignedUserId?: string | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer?: CustomerSummary;
+  assignedUser?: {
+    id: string;
+    name?: string | null;
+    email: string;
+  } | null;
 }
 
 // ─────────────────────────────────────────────
-// Alerts / Notifications
+// Alerts / Notifications (Authoritative Data Derived)
 // ─────────────────────────────────────────────
 
 export type AlertSeverity = 'info' | 'warning' | 'error' | 'success';
@@ -97,53 +125,30 @@ export interface CustomerAlert {
   id: string;
   title: string;
   message: string;
+  type: 'request' | 'billing' | 'account';
   severity: AlertSeverity;
   isRead: boolean;
-  createdAt: string; // ISO 8601
-  actionLabel?: string;
+  createdAt: string;
   actionRoute?: string;
 }
 
 // ─────────────────────────────────────────────
-// Transactions / Billing
-// ─────────────────────────────────────────────
-
-export type TransactionType = 'payment' | 'invoice' | 'credit' | 'adjustment';
-export type TransactionStatus = 'completed' | 'pending' | 'failed';
-
-export interface Transaction {
-  id: string;
-  description: string;
-  type: TransactionType;
-  status: TransactionStatus;
-  amount: number;
-  currency: string;
-  createdAt: string; // ISO 8601
-}
-
-// ─────────────────────────────────────────────
-// API Responses (generic wrappers)
+// API Responses
 // ─────────────────────────────────────────────
 
 export interface ApiSuccess<T> {
   success: true;
   data: T;
+  error?: never;
 }
 
 export interface ApiError {
   success: false;
   error: {
-    code: string;
+    code?: string;
     message: string;
-    details?: Record<string, string>;
   };
+  data?: never;
 }
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
-
-// ─────────────────────────────────────────────
-// Utility
-// ─────────────────────────────────────────────
-
-export type Nullable<T> = T | null;
-export type Optional<T> = T | undefined;

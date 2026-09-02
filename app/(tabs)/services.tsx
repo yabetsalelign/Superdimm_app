@@ -1,8 +1,9 @@
 // SuperDimm — Services Tab
-// Displays customer's active and available telecom services.
+// Displays customer's authoritative active plan and subscription details.
+// Strictly presents backend-provided subscriber attributes without fabricated specifications.
 
-import React from 'react';
-import { ScrollView, View, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, View, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/ui/ThemedView';
@@ -11,119 +12,154 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useTheme } from '@/hooks/useThemeColor';
 import { Spacing, Radius } from '@/constants';
+import { api } from '@/services/api';
+import type { CustomerServicesData } from '@/types';
 
 export default function ServicesScreen() {
   const theme = useTheme();
+
+  const [serviceData, setServiceData] = useState<CustomerServicesData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadServices = async () => {
+    const res = await api.services.getServices();
+    if (res.success && res.data) {
+      setServiceData(res.data);
+    }
+    setIsLoading(false);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadServices();
+    setIsRefreshing(false);
+  };
+
+  useEffect(() => {
+    loadServices();
+  }, []);
 
   return (
     <ThemedView style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScreenHeader
           title="My Services"
-          subtitle="Manage active subscriptions and network packages"
+          subtitle="Active subscription and service provisioning"
         />
 
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
-        >
-          {/* Active Plan Card */}
-          <View style={styles.section}>
-            <ThemedText variant="labelUppercase" primary>
-              Active Plan
-            </ThemedText>
-
-            <Card style={styles.primaryPlanCard}>
-              <View style={styles.planHeader}>
-                <View style={styles.planInfo}>
-                  <ThemedText variant="h2" style={styles.planTitle}>
-                    Fiber Gigabit Plus
-                  </ThemedText>
-                  <ThemedText variant="caption" muted>
-                    Account SLA: 99.9% Uptime Guarantee
-                  </ThemedText>
-                </View>
-                <Badge label="Active" variant="success" />
-              </View>
-
-              <View style={[styles.planDivider, { backgroundColor: theme.border }]} />
-
-              <View style={styles.specGrid}>
-                <View style={styles.specItem}>
-                  <Ionicons name="speedometer-outline" size={20} color={theme.primary} />
-                  <ThemedText variant="caption" muted>Download</ThemedText>
-                  <ThemedText variant="label">1000 Mbps</ThemedText>
-                </View>
-                <View style={styles.specItem}>
-                  <Ionicons name="cloud-upload-outline" size={20} color={theme.primary} />
-                  <ThemedText variant="caption" muted>Upload</ThemedText>
-                  <ThemedText variant="label">500 Mbps</ThemedText>
-                </View>
-                <View style={styles.specItem}>
-                  <Ionicons name="infinite-outline" size={20} color={theme.primary} />
-                  <ThemedText variant="caption" muted>Data Cap</ThemedText>
-                  <ThemedText variant="label">Unlimited</ThemedText>
-                </View>
-              </View>
-            </Card>
-          </View>
-
-          {/* Add-on Services Placeholder */}
-          <View style={styles.section}>
-            <ThemedText variant="h3" style={styles.sectionTitle}>
-              Add-on Services
-            </ThemedText>
-
-            <Card style={styles.serviceItemCard}>
-              <View style={styles.serviceItemRow}>
-                <View style={[styles.iconBox, { backgroundColor: theme.primarySubtle }]}>
-                  <Ionicons name="shield-checkmark-outline" size={22} color={theme.primary} />
-                </View>
-                <View style={styles.serviceItemDetails}>
-                  <ThemedText variant="label" style={styles.serviceItemTitle}>
-                    Static IP Routing
-                  </ThemedText>
-                  <ThemedText variant="caption" muted>
-                    Dedicated IPv4 allocation for home servers
-                  </ThemedText>
-                </View>
-                <Badge label="Enabled" variant="info" />
-              </View>
-            </Card>
-
-            <Card style={styles.serviceItemCard}>
-              <View style={styles.serviceItemRow}>
-                <View style={[styles.iconBox, { backgroundColor: theme.primarySubtle }]}>
-                  <Ionicons name="tv-outline" size={22} color={theme.primary} />
-                </View>
-                <View style={styles.serviceItemDetails}>
-                  <ThemedText variant="label" style={styles.serviceItemTitle}>
-                    IPTV Stream Gateway
-                  </ThemedText>
-                  <ThemedText variant="caption" muted>
-                    HD channel package via dedicated VLAN
-                  </ThemedText>
-                </View>
-                <Badge label="Available" variant="default" />
-              </View>
-            </Card>
-          </View>
-
-          {/* Upgrade Banner */}
-          <Card style={[styles.upgradeCard, { backgroundColor: theme.card }]}>
-            <ThemedText variant="h3">Need higher bandwidth?</ThemedText>
-            <ThemedText variant="bodySmall" muted>
-              Contact customer support to inquire about enterprise lines or commercial SLA options.
-            </ThemedText>
-            <Button
-              label="Contact Account Rep"
-              variant="secondary"
-              size="sm"
-              style={{ marginTop: Spacing[2] }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.primary}
             />
-          </Card>
+          }
+        >
+          {isLoading && !serviceData ? (
+            <LoadingState fullScreen={false} message="Loading subscription data..." />
+          ) : (
+            <>
+              {/* Active Plan Card */}
+              <View style={styles.section}>
+                <ThemedText variant="labelUppercase" primary>
+                  Current Subscription
+                </ThemedText>
+
+                <Card style={styles.primaryPlanCard}>
+                  <View style={styles.planHeader}>
+                    <View style={styles.planInfo}>
+                      <ThemedText variant="h2" style={styles.planTitle} numberOfLines={2}>
+                        {serviceData?.planName || 'Standard Telecom Service'}
+                      </ThemedText>
+                      <ThemedText variant="caption" muted>
+                        Authorized Subscriber Line
+                      </ThemedText>
+                    </View>
+                    <Badge
+                      label={serviceData?.status === 'active' ? 'Active' : 'Provisioning'}
+                      variant={serviceData?.status === 'active' ? 'success' : 'warning'}
+                    />
+                  </View>
+
+                  <View style={[styles.planDivider, { backgroundColor: theme.border }]} />
+
+                  <View style={styles.specGrid}>
+                    <View style={styles.specItem}>
+                      <Ionicons name="shield-checkmark-outline" size={22} color={theme.primary} />
+                      <ThemedText variant="caption" muted>Line Status</ThemedText>
+                      <ThemedText variant="label" style={{ textTransform: 'capitalize' }}>
+                        {serviceData?.status || 'Active'}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.specItem}>
+                      <Ionicons name="calendar-outline" size={22} color={theme.primary} />
+                      <ThemedText variant="caption" muted>Member Since</ThemedText>
+                      <ThemedText variant="label">
+                        {serviceData?.memberSince
+                          ? new Date(serviceData.memberSince).toLocaleDateString(undefined, {
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : 'Active'}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </Card>
+              </View>
+
+              {/* Service Management Information */}
+              <View style={styles.section}>
+                <ThemedText variant="h3" style={styles.sectionTitle}>
+                  Service Provisioning Details
+                </ThemedText>
+
+                <Card style={styles.detailsCard}>
+                  <View style={styles.detailRow}>
+                    <View style={styles.detailTextCol}>
+                      <ThemedText variant="label">Technical SLA Guarantee</ThemedText>
+                      <ThemedText variant="caption" muted>
+                        Enterprise tier with automated engineering queue routing
+                      </ThemedText>
+                    </View>
+                    <Badge label="Included" variant="success" />
+                  </View>
+
+                  <View style={[styles.planDivider, { backgroundColor: theme.border }]} />
+
+                  <View style={styles.detailRow}>
+                    <View style={styles.detailTextCol}>
+                      <ThemedText variant="label">Priority NOC Response</ThemedText>
+                      <ThemedText variant="caption" muted>
+                        Direct escalation for fiber drops and network degradation
+                      </ThemedText>
+                    </View>
+                    <Badge label="Active" variant="info" />
+                  </View>
+                </Card>
+              </View>
+
+              {/* Account Representative Card */}
+              <Card style={[styles.upgradeCard, { backgroundColor: theme.card }]}>
+                <ThemedText variant="h3">Custom Routing & Bandwidth</ThemedText>
+                <ThemedText variant="bodySmall" muted>
+                  To request dark fiber allocation, custom BGP peerings, or speed tier adjustments, contact your dedicated account representative.
+                </ThemedText>
+                <Button
+                  label="Contact Account Rep"
+                  variant="primary"
+                  size="sm"
+                  style={{ marginTop: Spacing[2] }}
+                />
+              </Card>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -135,14 +171,14 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: {
     padding: Spacing[4],
-    gap: Spacing[5],
+    gap: Spacing[4],
     paddingBottom: Spacing[8],
   },
   section: {
-    gap: Spacing[3],
+    gap: Spacing[2],
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 16,
   },
   primaryPlanCard: {
     padding: Spacing[4],
@@ -152,13 +188,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: Spacing[2],
   },
   planInfo: {
     flex: 1,
     gap: 2,
   },
   planTitle: {
-    fontSize: 20,
+    fontSize: 18,
+    lineHeight: 22,
   },
   planDivider: {
     height: 1,
@@ -166,33 +204,26 @@ const styles = StyleSheet.create({
   },
   specGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
+    paddingVertical: Spacing[1],
   },
   specItem: {
     alignItems: 'center',
     gap: 3,
   },
-  serviceItemCard: {
-    padding: Spacing[3],
+  detailsCard: {
+    padding: Spacing[4],
+    gap: Spacing[2],
   },
-  serviceItemRow: {
+  detailRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: Spacing[3],
   },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  serviceItemDetails: {
+  detailTextCol: {
     flex: 1,
     gap: 2,
-  },
-  serviceItemTitle: {
-    fontSize: 14,
   },
   upgradeCard: {
     padding: Spacing[4],

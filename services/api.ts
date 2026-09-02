@@ -1,39 +1,20 @@
-// SuperDimm Mobile — API Service Layer (Phase 1 Stub)
-//
-// This module defines the API client architecture.
-// Endpoints are stubbed and will be wired to the real SuperDimm backend in Phase 2.
-//
-// Architecture:
-//   api.request<T>()   — typed HTTP helper
-//   api.auth           — authentication namespace
-//   api.customer       — customer profile namespace
-//   api.services       — service plans namespace
-//   api.requests       — service requests namespace
-//   api.notifications  — alerts/notifications namespace
+// SuperDimm Mobile — API Client Layer
+// Connects to the SuperDimm Next.js backend via REST endpoints with JWT Bearer authentication.
 
 import type {
   ApiResponse,
-  AuthTokens,
-  AuthSession,
-  Customer,
-  ServicePlan,
-  ServiceRequest,
+  AuthSessionData,
+  CustomerProfileDetail,
+  CustomerServicesData,
   CustomerAlert,
-  Transaction,
+  ServiceRequest,
 } from '@/types';
+import { storage } from './storage';
 
-// ─────────────────────────────────────────────
-// Configuration
-// ─────────────────────────────────────────────
-
-// TODO (Phase 2): Move to environment config / Expo Constants
-const API_BASE_URL = 'https://api.superdimm.example.com/v1';
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:3000/api';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-
-// ─────────────────────────────────────────────
-// HTTP Client
-// ─────────────────────────────────────────────
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -44,17 +25,25 @@ interface RequestOptions {
 
 async function request<T>(
   path: string,
-  options: RequestOptions = {},
+  options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
-  const { method = 'GET', body, accessToken, signal } = options;
+  const { method = 'GET', body, accessToken: customToken, signal } = options;
+
+  let token = customToken;
+  if (!token) {
+    const savedTokens = await storage.getTokens();
+    if (savedTokens) {
+      token = savedTokens.accessToken;
+    }
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
 
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const controller = new AbortController();
@@ -71,17 +60,40 @@ async function request<T>(
 
     clearTimeout(timeoutId);
 
-    const json = (await response.json()) as ApiResponse<T>;
-    return json;
+    const json = await response.json();
+
+    if (!response.ok) {
+      // 401 Unauthorized -> clear token if expired
+      if (response.status === 401) {
+        await storage.clearSession();
+      }
+      return {
+        success: false,
+        error: {
+          code: String(response.status),
+          message: json?.error || json?.message || `Request failed with status ${response.status}`,
+        },
+      };
+    }
+
+    // Backend responses that wrap data in { success: true, data: T }
+    if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
+      return json as ApiResponse<T>;
+    }
+
+    // Plain JSON payload returned by standard routes
+    return {
+      success: true,
+      data: json as T,
+    };
   } catch (err) {
     clearTimeout(timeoutId);
-
     const message =
       err instanceof Error
         ? err.name === 'AbortError'
-          ? 'Request timed out. Please check your connection.'
+          ? 'Network request timed out. Please verify the backend is running.'
           : err.message
-        : 'An unexpected error occurred.';
+        : 'Network request failed.';
 
     return {
       success: false,
@@ -96,155 +108,92 @@ async function request<T>(
 
 export const auth = {
   /**
-   * TODO (Phase 2): POST /auth/login
-   * Authenticate a customer and receive access + refresh tokens.
+   * Authenticate mobile client and retrieve signed JWT.
    */
-  login: async (_email: string, _password: string): Promise<ApiResponse<AuthSession>> => {
-    // Stub — not implemented in Phase 1
-    return {
-      success: false,
-      error: {
-        code: 'NOT_IMPLEMENTED',
-        message: 'Authentication will be implemented in Phase 2.',
-      },
-    };
+  login: async (email: string, password: string): Promise<ApiResponse<AuthSessionData>> => {
+    return request<AuthSessionData>('/auth/mobile', {
+      method: 'POST',
+      body: { email, password },
+    });
   },
 
-  /**
-   * TODO (Phase 2): POST /auth/refresh
-   * Exchange a refresh token for new access + refresh tokens.
-   */
-  refresh: async (_refreshToken: string): Promise<ApiResponse<AuthTokens>> => {
-    return {
-      success: false,
-      error: { code: 'NOT_IMPLEMENTED', message: 'Token refresh not yet implemented.' },
-    };
-  },
-
-  /**
-   * TODO (Phase 2): POST /auth/logout
-   */
-  logout: async (_refreshToken: string): Promise<ApiResponse<void>> => {
-    return {
-      success: false,
-      error: { code: 'NOT_IMPLEMENTED', message: 'Logout not yet implemented.' },
-    };
+  logout: async (): Promise<void> => {
+    await storage.clearSession();
   },
 };
 
 // ─────────────────────────────────────────────
-// Customer Namespace
+// Customer Profile Namespace
 // ─────────────────────────────────────────────
 
 export const customer = {
   /**
-   * TODO (Phase 2): GET /customer/me
-   * Fetch the authenticated customer's full profile.
+   * Fetch authenticated customer's profile, plan, and recent statistics.
    */
-  getProfile: async (accessToken: string): Promise<ApiResponse<Customer>> =>
-    request<Customer>('/customer/me', { accessToken }),
-
-  /**
-   * TODO (Phase 2): PATCH /customer/me
-   * Update customer profile fields.
-   */
-  updateProfile: async (
-    accessToken: string,
-    payload: Partial<Pick<Customer, 'name' | 'phone' | 'address'>>,
-  ): Promise<ApiResponse<Customer>> =>
-    request<Customer>('/customer/me', {
-      method: 'PATCH',
-      body: payload,
-      accessToken,
-    }),
+  getProfile: async (): Promise<ApiResponse<CustomerProfileDetail>> => {
+    return request<CustomerProfileDetail>('/customer/me');
+  },
 };
 
 // ─────────────────────────────────────────────
-// Services Namespace
+// Services / Plans Namespace
 // ─────────────────────────────────────────────
 
 export const services = {
   /**
-   * TODO (Phase 2): GET /customer/services
-   * List the customer's active service plans.
+   * Fetch customer's active subscription tier and provisioning status.
    */
-  list: async (accessToken: string): Promise<ApiResponse<ServicePlan[]>> =>
-    request<ServicePlan[]>('/customer/services', { accessToken }),
+  getServices: async (): Promise<ApiResponse<CustomerServicesData>> => {
+    return request<CustomerServicesData>('/customer/services');
+  },
 };
 
 // ─────────────────────────────────────────────
-// Requests Namespace
+// Service Requests Namespace
 // ─────────────────────────────────────────────
 
 export const requests = {
   /**
-   * TODO (Phase 2): GET /customer/requests
+   * List customer's support requests.
    */
-  list: async (accessToken: string): Promise<ApiResponse<ServiceRequest[]>> =>
-    request<ServiceRequest[]>('/customer/requests', { accessToken }),
+  list: async (): Promise<ApiResponse<ServiceRequest[]>> => {
+    return request<ServiceRequest[]>('/requests');
+  },
 
   /**
-   * TODO (Phase 2): GET /customer/requests/:id
+   * Get single service request by ID.
    */
-  getById: async (
-    accessToken: string,
-    id: string,
-  ): Promise<ApiResponse<ServiceRequest>> =>
-    request<ServiceRequest>(`/customer/requests/${id}`, { accessToken }),
+  getById: async (id: string): Promise<ApiResponse<ServiceRequest>> => {
+    return request<ServiceRequest>(`/requests/${id}`);
+  },
 
   /**
-   * TODO (Phase 2): POST /customer/requests
+   * Create a new support ticket.
    */
-  create: async (
-    accessToken: string,
-    payload: Pick<ServiceRequest, 'title' | 'description' | 'category'>,
-  ): Promise<ApiResponse<ServiceRequest>> =>
-    request<ServiceRequest>('/customer/requests', {
+  create: async (payload: {
+    title: string;
+    description?: string;
+    category?: string;
+  }): Promise<ApiResponse<ServiceRequest>> => {
+    return request<ServiceRequest>('/requests', {
       method: 'POST',
       body: payload,
-      accessToken,
-    }),
+    });
+  },
 };
 
 // ─────────────────────────────────────────────
-// Notifications Namespace
+// Alerts / Notifications Namespace
 // ─────────────────────────────────────────────
 
 export const notifications = {
   /**
-   * TODO (Phase 2): GET /customer/alerts
+   * Fetch real subscriber notifications derived from active cases and account records.
    */
-  list: async (accessToken: string): Promise<ApiResponse<CustomerAlert[]>> =>
-    request<CustomerAlert[]>('/customer/alerts', { accessToken }),
-
-  /**
-   * TODO (Phase 2): PATCH /customer/alerts/:id/read
-   */
-  markRead: async (
-    accessToken: string,
-    alertId: string,
-  ): Promise<ApiResponse<void>> =>
-    request<void>(`/customer/alerts/${alertId}/read`, {
-      method: 'PATCH',
-      accessToken,
-    }),
+  list: async (): Promise<ApiResponse<CustomerAlert[]>> => {
+    return request<CustomerAlert[]>('/customer/alerts');
+  },
 };
-
-// ─────────────────────────────────────────────
-// Payments / Transactions Namespace
-// ─────────────────────────────────────────────
-
-export const payments = {
-  /**
-   * TODO (Phase 2): GET /customer/transactions
-   */
-  listTransactions: async (accessToken: string): Promise<ApiResponse<Transaction[]>> =>
-    request<Transaction[]>('/customer/transactions', { accessToken }),
-};
-
-// ─────────────────────────────────────────────
-// Unified export
-// ─────────────────────────────────────────────
 
 export const api = {
   auth,
@@ -252,7 +201,6 @@ export const api = {
   services,
   requests,
   notifications,
-  payments,
 };
 
 export default api;

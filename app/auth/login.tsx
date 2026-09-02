@@ -1,5 +1,5 @@
-// SuperDimm Mobile — Login Screen (Phase 1 Placeholder)
-// Clearly marked as a temporary test placeholder before Phase 2 JWT integration.
+// SuperDimm Mobile — Login Screen
+// Real JWT Bearer authentication flow with backend validation and error handling.
 
 import React, { useState } from 'react';
 import {
@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,10 +18,11 @@ import { ThemedView } from '@/components/ui/ThemedView';
 import { ThemedText } from '@/components/ui/ThemedText';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { BrandHeader } from '@/components/BrandHeader';
 import { useTheme } from '@/hooks/useThemeColor';
 import { Spacing, Radius } from '@/constants';
+import { api } from '@/services/api';
+import { storage } from '@/services/storage';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -32,18 +32,29 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage('Please enter both your email address and password.');
+      return;
+    }
+
     setIsLoading(true);
-    // Phase 1: Simulate validation and return to main tabs
-    setTimeout(() => {
-      setIsLoading(false);
-      Alert.alert(
-        'Phase 1 Navigation Test',
-        'Real JWT authentication will be implemented in Phase 2. Navigating back to home.',
-        [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]
+    setErrorMessage(null);
+
+    const res = await api.auth.login(email.trim(), password.trim());
+
+    setIsLoading(false);
+
+    if (res.success) {
+      await storage.saveSession(res.data);
+      router.replace('/(tabs)');
+    } else {
+      setErrorMessage(
+        res.error.message || 'Authentication failed. Please check your credentials.'
       );
-    }, 600);
+    }
   };
 
   return (
@@ -62,11 +73,11 @@ export default function LoginScreen() {
             >
               <Ionicons name="arrow-back" size={24} color={theme.foreground} />
             </TouchableOpacity>
-            <Badge label="Phase 1 Placeholder" variant="warning" />
           </View>
 
           <ScrollView
             contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             {/* SuperDimm Branding */}
@@ -77,14 +88,37 @@ export default function LoginScreen() {
                 Sign In
               </ThemedText>
               <ThemedText variant="caption" muted style={styles.cardSubtitle}>
-                Access your telecom subscription and manage support tickets.
+                Access your telecom subscription, billing statements, and support tickets.
               </ThemedText>
+
+              {errorMessage ? (
+                <View
+                  style={[
+                    styles.errorBanner,
+                    {
+                      backgroundColor: theme.errorBackground,
+                      borderColor: theme.errorBorder,
+                    },
+                  ]}
+                >
+                  <Ionicons name="alert-circle" size={18} color={theme.error} />
+                  <ThemedText
+                    variant="caption"
+                    style={{ color: theme.error, flex: 1, fontWeight: '500' }}
+                  >
+                    {errorMessage}
+                  </ThemedText>
+                </View>
+              ) : null}
 
               <View style={styles.fieldGroup}>
                 <ThemedText variant="label">Email Address</ThemedText>
                 <TextInput
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="subscriber@example.com"
                   placeholderTextColor={theme.placeholderText}
                   autoCapitalize="none"
@@ -105,7 +139,10 @@ export default function LoginScreen() {
                 <View style={styles.passwordContainer}>
                   <TextInput
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
                     placeholder="••••••••••••"
                     placeholderTextColor={theme.placeholderText}
                     secureTextEntry={!showPassword}
@@ -121,6 +158,7 @@ export default function LoginScreen() {
                   <TouchableOpacity
                     style={styles.eyeBtn}
                     onPress={() => setShowPassword(!showPassword)}
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                   >
                     <Ionicons
                       name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -138,14 +176,6 @@ export default function LoginScreen() {
                 onPress={handleLogin}
                 style={{ marginTop: Spacing[2] }}
               />
-
-              <View style={[styles.cardDivider, { backgroundColor: theme.border }]} />
-
-              <View style={styles.noticeBox}>
-                <ThemedText variant="caption" muted style={{ textAlign: 'center' }}>
-                  Real token exchange and encrypted storage will be activated in Phase 2.
-                </ThemedText>
-              </View>
             </Card>
 
             <TouchableOpacity
@@ -169,7 +199,6 @@ const styles = StyleSheet.create({
   keyboardView: { flex: 1 },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[2],
@@ -192,39 +221,40 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     marginTop: -Spacing[2],
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+    padding: Spacing[3],
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
   fieldGroup: {
     gap: Spacing[2],
   },
   input: {
-    height: 46,
+    height: 48,
     borderRadius: Radius.md,
     borderWidth: 1,
     paddingHorizontal: Spacing[3],
-    fontSize: 14,
+    fontSize: 15,
   },
   passwordContainer: {
     position: 'relative',
     justifyContent: 'center',
   },
   passwordInput: {
-    height: 46,
+    height: 48,
     borderRadius: Radius.md,
     borderWidth: 1,
     paddingLeft: Spacing[3],
-    paddingRight: 44,
-    fontSize: 14,
+    paddingRight: 48,
+    fontSize: 15,
   },
   eyeBtn: {
     position: 'absolute',
     right: 12,
-    padding: 4,
-  },
-  cardDivider: {
-    height: 1,
-    marginVertical: Spacing[1],
-  },
-  noticeBox: {
-    alignItems: 'center',
+    padding: 8,
   },
   cancelLink: {
     alignItems: 'center',

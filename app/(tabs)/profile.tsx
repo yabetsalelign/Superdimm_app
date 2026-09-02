@@ -1,8 +1,14 @@
 // SuperDimm — Profile Tab
-// Customer profile, settings, and session options.
+// Subscriber details, provisioning info, preferences, and session sign-out.
 
-import React from 'react';
-import { ScrollView, View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ScrollView,
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,10 +20,48 @@ import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useTheme } from '@/hooks/useThemeColor';
 import { Spacing, Radius } from '@/constants';
+import { api } from '@/services/api';
+import { storage } from '@/services/storage';
+import type { CustomerProfileDetail } from '@/types';
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const router = useRouter();
+
+  const [customer, setCustomer] = useState<CustomerProfileDetail | null>(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      const res = await api.customer.getProfile();
+      if (res.success && res.data) {
+        setCustomer(res.data);
+      } else {
+        const cached = await storage.getCustomer();
+        if (cached) {
+          setCustomer(cached as CustomerProfileDetail);
+        }
+      }
+    }
+    loadProfile();
+  }, []);
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to end your subscriber session?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await api.auth.logout();
+            router.replace('/auth/login');
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <ThemedView style={styles.screen}>
@@ -38,16 +82,21 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.profileMeta}>
               <ThemedText variant="h2" style={styles.nameText}>
-                Alex Mercer
+                {customer?.name || 'Subscriber Account'}
               </ThemedText>
               <ThemedText variant="caption" muted>
-                subscriber.mercer@example.com
+                {customer?.email || 'No email registered'}
               </ThemedText>
-              <ThemedText variant="mono" primary style={styles.idText}>
-                ACC-992014-X
-              </ThemedText>
+              {customer?.id ? (
+                <ThemedText variant="mono" primary style={styles.idText}>
+                  ACC-{customer.id.slice(-6).toUpperCase()}
+                </ThemedText>
+              ) : null}
             </View>
-            <Badge label="Verified Subscriber" variant="success" />
+            <Badge
+              label={customer?.status === 'active' ? 'Verified Subscriber' : 'Pending Activation'}
+              variant={customer?.status === 'active' ? 'success' : 'warning'}
+            />
           </Card>
 
           {/* Account Details */}
@@ -59,22 +108,28 @@ export default function ProfileScreen() {
             <Card style={styles.detailsCard}>
               <View style={styles.detailRow}>
                 <ThemedText variant="caption" muted>Primary Phone</ThemedText>
-                <ThemedText variant="label">+1 (555) 019-2834</ThemedText>
+                <ThemedText variant="label">
+                  {customer?.phone || 'Not registered'}
+                </ThemedText>
               </View>
               <View style={[styles.divider, { backgroundColor: theme.border }]} />
               <View style={styles.detailRow}>
-                <ThemedText variant="caption" muted>Service Address</ThemedText>
-                <ThemedText variant="label">452 Telecom Blvd, Suite 300</ThemedText>
+                <ThemedText variant="caption" muted>Active Service Plan</ThemedText>
+                <ThemedText variant="label" numberOfLines={1}>
+                  {customer?.plan || 'Standard Service'}
+                </ThemedText>
               </View>
               <View style={[styles.divider, { backgroundColor: theme.border }]} />
               <View style={styles.detailRow}>
-                <ThemedText variant="caption" muted>Authentication Mode</ThemedText>
-                <ThemedText variant="label">Bearer JWT (Phase 2 Prep)</ThemedText>
+                <ThemedText variant="caption" muted>Total Cases Submitted</ThemedText>
+                <ThemedText variant="label">
+                  {customer?.totalRequestsCount ?? 0}
+                </ThemedText>
               </View>
             </Card>
           </View>
 
-          {/* Settings Section */}
+          {/* Preferences Section */}
           <View style={styles.section}>
             <ThemedText variant="h3" style={styles.sectionTitle}>
               Preferences
@@ -91,37 +146,40 @@ export default function ProfileScreen() {
 
               <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-              <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => router.push('/(tabs)/alerts')}
+              >
                 <View style={styles.menuItemLeft}>
                   <Ionicons name="notifications-outline" size={20} color={theme.foreground} />
                   <ThemedText variant="bodySmall">Notification Preferences</ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
               </TouchableOpacity>
-
-              <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                activeOpacity={0.7}
-                onPress={() => router.push('/auth/login')}
-              >
-                <View style={styles.menuItemLeft}>
-                  <Ionicons name="log-in-outline" size={20} color={theme.primary} />
-                  <ThemedText variant="bodySmall" primary>
-                    Sign In (Placeholder Flow)
-                  </ThemedText>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.primary} />
-              </TouchableOpacity>
             </Card>
           </View>
 
-          <Button
-            label="Sign Out (Simulated)"
-            variant="ghost"
-            style={{ marginTop: Spacing[2] }}
-          />
+          {/* Danger-styled Sign Out Button */}
+          <TouchableOpacity
+            style={[
+              styles.signOutBtn,
+              {
+                borderColor: theme.errorBorder,
+                backgroundColor: theme.errorBackground,
+              },
+            ]}
+            onPress={handleSignOut}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="log-out-outline" size={20} color={theme.error} />
+            <ThemedText
+              variant="label"
+              style={{ color: theme.error, fontWeight: '600' }}
+            >
+              Sign Out
+            </ThemedText>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -192,5 +250,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[3],
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing[2],
+    height: 48,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    marginTop: Spacing[2],
   },
 });
