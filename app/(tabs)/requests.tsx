@@ -1,7 +1,7 @@
 // SuperDimm — Requests Tab
 // Live service tickets and troubleshooting cases with filter chips, search, and tappable rows.
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -11,7 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/ui/ThemedView';
 import { ThemedText } from '@/components/ui/ThemedText';
@@ -76,9 +76,11 @@ export default function RequestsScreen() {
     setIsRefreshing(false);
   };
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadRequests();
+    }, [])
+  );
 
   // Filtered requests based on active tab & search query
   const filteredRequests = useMemo(() => {

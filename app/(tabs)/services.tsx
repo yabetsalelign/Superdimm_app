@@ -2,9 +2,10 @@
 // Displays customer's authoritative active plan and subscription details.
 // Strictly presents backend-provided subscriber attributes without fabricated specifications.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ScrollView, View, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/ui/ThemedView';
 import { ThemedText } from '@/components/ui/ThemedText';
@@ -39,9 +40,11 @@ export default function ServicesScreen() {
     setIsRefreshing(false);
   };
 
-  useEffect(() => {
-    loadServices();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadServices();
+    }, [])
+  );
 
   return (
     <ThemedView style={styles.screen}>

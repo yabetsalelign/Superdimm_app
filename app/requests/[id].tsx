@@ -38,9 +38,11 @@ function getStatusBadge(status?: string): { label: string; variant: BadgeVariant
 }
 
 export default function RequestDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const theme = useTheme();
   const router = useRouter();
+
+  const requestId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : undefined;
 
   const [ticket, setTicket] = useState<ServiceRequest | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,9 +50,12 @@ export default function RequestDetailsScreen() {
 
   useEffect(() => {
     async function loadTicket() {
-      if (!id) return;
+      if (!requestId) {
+        setIsLoading(false);
+        return;
+      }
       setErrorMessage(null);
-      const res = await api.requests.getById(id);
+      const res = await api.requests.getById(requestId);
       if (res.success && res.data) {
         setTicket(res.data);
       } else {
@@ -59,7 +64,7 @@ export default function RequestDetailsScreen() {
       setIsLoading(false);
     }
     loadTicket();
-  }, [id]);
+  }, [requestId]);
 
   const badge = getStatusBadge(ticket?.status);
   const caseRef = ticket ? `SR-${ticket.id.slice(-5).toUpperCase()}` : 'SR-.....';

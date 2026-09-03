@@ -2,7 +2,7 @@
 // Customer account overview with live subscriber data, SLA indicator, and quick actions.
 // Optimized for 375-430px viewports with responsive card layouts and robust states.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -12,7 +12,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/ui/ThemedView';
 import { ThemedText } from '@/components/ui/ThemedText';
@@ -59,9 +59,11 @@ export default function HomeScreen() {
     setIsRefreshing(false);
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   const firstName = customer?.name ? customer.name.split(' ')[0] : 'Subscriber';
 
